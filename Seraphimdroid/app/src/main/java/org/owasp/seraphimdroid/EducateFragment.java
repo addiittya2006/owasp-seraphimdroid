@@ -15,10 +15,12 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Toast;
 
+import com.android.volley.Request;
 import com.android.volley.RequestQueue;
 import com.android.volley.Response;
 import com.android.volley.VolleyError;
 import com.android.volley.toolbox.JsonArrayRequest;
+import com.android.volley.toolbox.JsonObjectRequest;
 import com.android.volley.toolbox.Volley;
 
 import org.json.JSONArray;
@@ -77,9 +79,16 @@ public class EducateFragment extends Fragment implements SwipeRefreshLayout.OnRe
                 if (ch.isConnectingToInternet()) {
                     i.putExtra("url", BASE_URL + "articles/" + item.getId());
                     i.putExtra("header", "Article from " + item.getCategory() +  " Category");
+                    ArrayList<Article> arr = db.getOfflineReadArticles();
+                    if (!arr.isEmpty()) {
+                        for (Article article: arr){
+                            uploadOfflineStats(Integer.parseInt(article.getId()));
+                        }
+//                        db.markUploaded(arr);
+                    }
                     startActivity(i);
                 } else {
-                    FileInputStream fis = null;
+                    FileInputStream fis;
                     try {
                         fis = new FileInputStream(new File(getActivity().getFilesDir().getAbsolutePath() + File.separator + item.getId() + "page.mht"));
                         if (fis.read() == 0) {
@@ -94,6 +103,7 @@ public class EducateFragment extends Fragment implements SwipeRefreshLayout.OnRe
                     }
                     i.putExtra("url", "file:///" + getActivity().getFilesDir().getAbsolutePath() + File.separator + item.getId() + "page.mht");
                     i.putExtra("header", "Article from " + item.getCategory() + " Category");
+                    db.addOfflineRead(Integer.parseInt(item.getId()));
                     startActivity(i);
                 }
 
@@ -195,19 +205,19 @@ public class EducateFragment extends Fragment implements SwipeRefreshLayout.OnRe
         swipeRefreshLayout = (SwipeRefreshLayout) view.findViewById(R.id.swipe_refresh_layout);
         swipeRefreshLayout.setOnRefreshListener(this);
         swipeRefreshLayout.post(new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        swipeRefreshLayout.setRefreshing(true);
+            @Override
+            public void run() {
+                swipeRefreshLayout.setRefreshing(true);
 //                                        Log.i("Hello", "run: " + tags);
-                                        if (tags != null){
-                                            mArrArticle.addAll(db.getArticlesWithTag(tags));
-                                            va.notifyDataSetChanged();
-                                            swipeRefreshLayout.setRefreshing(false);
-                                        } else {
-                                            mRequestQueue.add(jar);
-                                        }
-                                    }
-                                });
+                if (tags != null){
+                    mArrArticle.addAll(db.getArticlesWithTag(tags));
+                    va.notifyDataSetChanged();
+                    swipeRefreshLayout.setRefreshing(false);
+                } else {
+                    mRequestQueue.add(jar);
+                }
+            }
+        });
 
         return view;
     }
@@ -303,6 +313,36 @@ public class EducateFragment extends Fragment implements SwipeRefreshLayout.OnRe
         });
         mRequestQueue.add(jar);
         tags=null;
+    }
+
+    public void uploadOfflineStats(int id) {
+        final String addurl = "http://educate-seraphimdroid.rhcloud.com/articles/"+Integer.toString(id)+".json";
+        int reads = db.getOfflineReads(id);
+        JSONObject header = new JSONObject();
+        try {
+            header.put("Content-Type", "application/json");
+            header.put("many", reads);
+        } catch (JSONException ignored) {}
+
+        JsonObjectRequest addUsage = new JsonObjectRequest(Request.Method.GET, addurl, header,
+                new Response.Listener<JSONObject>() {
+                    String resp;
+                    @Override
+                    public void onResponse(JSONObject response) {
+                        try { resp = response.getString("id"); } catch (JSONException e) { Toast.makeText(getActivity(), "Some Error Occured.", Toast.LENGTH_SHORT).show(); }
+                        if (resp != null) {
+                            Log.i("Usage", "onResponse: Analyzed");
+                        }
+                    }
+                }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+                Log.d("TAG", "onErrorResponse: "+"Error Response");
+            }
+        });
+
+        RequestQueue requestQueue = Volley.newRequestQueue(getActivity());
+        requestQueue.add(addUsage);
     }
 
 }

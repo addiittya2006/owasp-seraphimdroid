@@ -5,6 +5,7 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import android.util.Log;
 
 import org.owasp.seraphimdroid.model.Article;
 import org.owasp.seraphimdroid.model.Feedback;
@@ -40,7 +41,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 	public static final String createBlacklistTable = "CREATE TABLE IF NOT EXISTS blacklist (_id INTEGER PRIMARY KEY AUTOINCREMENT, number TEXT NOT NULL)";
 	public static final String createBlockedUSSDTable = "CREATE TABLE IF NOT EXISTS block_ussd (_id INTEGER PRIMARY KEY AUTOINCREMENT, number TEXT NOT NULL, desc TEXT NOT NULL, type TEXT NOT NULL)";
 	private final String createPermissionTable = "CREATE TABLE IF NOT EXISTS permissions (_id INTEGER PRIMARY KEY AUTOINCREMENT, permission TEXT, weight INTEGER, malicious_use TEXT)";
-	private final String createArticlesTable = "CREATE TABLE IF NOT EXISTS articles ( id INTEGER PRIMARY KEY, title TEXT, category TEXT, cachefile TEXT, tags TEXT)";
+	private final String createArticlesTable = "CREATE TABLE IF NOT EXISTS articles ( id INTEGER PRIMARY KEY, title TEXT, category TEXT, cachefile TEXT, tags TEXT, reads INTEGER)";
 	private final String createFeedbackTable = "CREATE TABLE IF NOT EXISTS feedback (  question TEXT, description TEXT, upvotes INTEGER )";
 	private static final String createUsageTable = "CREATE TABLE IF NOT EXISTS usage ( id INTEGER, title TEXT, uses INTEGER )";
 
@@ -392,6 +393,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 			cv.put("cachefile", ar.getCachefile());
 			String tags = ar.getTags().toString();
 			cv.put("tags", tags.replace("[", "").replace("]", ""));
+			cv.put("reads", getOfflineReads(Integer.parseInt(ar.getId())));
 			db.insert(TABLE_ARTICLES, null, cv);
 			cv.clear();
 		}
@@ -440,6 +442,71 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 		}
 		cursor.close();
 		return articles;
+	}
+
+	public void addOfflineRead(int id) {
+		SQLiteDatabase db = this.getWritableDatabase();
+		int exist = getOfflineReads(id);
+		int new_val = exist + 1;
+		ContentValues cv = new ContentValues();
+		cv.put("reads", new_val);
+		db.update("articles", cv, "id="+id, null);
+	}
+
+	public int getOfflineReads(int id) {
+		SQLiteDatabase db = this.getWritableDatabase();
+		Cursor cursor = db.rawQuery("SELECT * FROM articles", null);
+		int reads = 0;
+		if (cursor.moveToFirst()) {
+			do {
+				if (cursor.getString(0).equals(Integer.toString(id))){
+					if(cursor.getString(5) != null) {
+						reads = Integer.parseInt(cursor.getString(5));
+					}
+				}
+			} while (cursor.moveToNext());
+		}
+		cursor.close();
+		return reads;
+	}
+
+	public void removeOfflineReads(int id) {
+		SQLiteDatabase db = this.getWritableDatabase();
+		int new_val = 0;
+		ContentValues cv = new ContentValues();
+		cv.put("reads", new_val);
+		db.update("articles", cv, "id="+id, null);
+	}
+
+	public ArrayList<Article> getOfflineReadArticles () {
+		ArrayList<Article> articlesList = new ArrayList<>();
+		String selectQuery = "SELECT  * FROM " + TABLE_ARTICLES;
+		SQLiteDatabase db = this.getWritableDatabase();
+		Cursor cursor = db.rawQuery(selectQuery, null);
+
+		if (cursor.moveToFirst()) {
+			do {
+				Article article = new Article();
+				article.setId(cursor.getString(0));
+				article.setTitle(cursor.getString(1));
+				article.setCategory(cursor.getString(2));
+				article.setCachefile(cursor.getString(3));
+				article.setTags(new ArrayList<>(Arrays.asList(cursor.getString(4).split("\\s*,\\s*"))));
+				Log.i("TAG", "getOfflineReadArticles: "+cursor.getString(0)+cursor.getInt(5));
+//				Log.d("TAG", "getOfflineReadArticles: "+getOfflineReads(Integer.parseInt(article.getId())));
+//				if (getOfflineReads(Integer.parseInt(article.getId())) > 0){
+//					articlesList.add(article);
+//				}
+			} while (cursor.moveToNext());
+		}
+		cursor.close();
+		return articlesList;
+	}
+
+	public void markUploaded(ArrayList<Article> articles) {
+		for (Article article: articles) {
+			removeOfflineReads(Integer.parseInt(article.getId()));
+		}
 	}
 
 }
